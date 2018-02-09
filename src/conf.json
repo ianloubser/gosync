@@ -1,0 +1,13 @@
+{
+    "AccessKeyID": "UI92LEDIE3IHEITTFLHP",
+    "SecretAccessKey": "8LXM9fjqb14vYPnMRzuk4IB7Wh2IF8Glc2qBj4TK",
+    "BucketName": "test",
+    "BucketRegion": "us-east-1",
+    "BucketEndpoint": "http://127.0.0.1",
+    "ScanInterval": 1,
+    "BatchSyncSize": 10,
+    "InitialSync": false,
+    "Paths": [
+        "/Users/Ian/go/src/gosyncs3/test/data/*"
+    ]
+}

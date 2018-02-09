@@ -1,0 +1,15 @@
+# Setup local dependencies and servers necessary to test
+
+version: '3'
+
+services:
+  minio:
+    image: minio/minio
+    hostname: mocks3
+    container_name: mocks3
+    environment:
+      - MINIO_ACCESS_KEY=UI92LEDIE3IHEITTFLHP
+      - MINIO_SECRET_KEY=8LXM9fjqb14vYPnMRzuk4IB7Wh2IF8Glc2qBj4TK
+    ports:
+      - "0.0.0.0:80:9000"
+    command: ['minio','server','/data']
