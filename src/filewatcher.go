@@ -122,8 +122,11 @@ func filewatcher(config *Configuration) {
 	if config.InitialSync {
 		log.Println("Performing initial sync step, this might take a while...")
 		for path, f := range w.WatchedFiles() {
-			log.Println(path, f.Name())
+			// log.Println(path, f.Name())
 			// uploadFiles(config, path)
+			if !f.IsDir() {
+				eventPool.incomingEvent <- watcher.Event{watcher.Create, path, f}
+			}
 		}
 	} else {
 		log.Println("Initial sync disabled, skipping this step...")

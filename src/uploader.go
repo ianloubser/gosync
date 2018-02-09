@@ -33,7 +33,7 @@ type SyncTask struct {
 func removeFiles(config *Configuration, events []watcher.Event) {
 	creds := credentials.NewStaticCredentials(config.AccessKeyID, config.SecretAccessKey, "")
 
-	removeObjects := make([]s3manager.BatchDeleteObject, config.BatchSyncSize)
+	removeObjects := make([]s3manager.BatchDeleteObject, len(events))
 
 	for i, event := range events {
 		removeObjects[i] = s3manager.BatchDeleteObject{
@@ -64,7 +64,7 @@ func removeFiles(config *Configuration, events []watcher.Event) {
 func uploadFiles(config *Configuration, events []watcher.Event) {
 	creds := credentials.NewStaticCredentials(config.AccessKeyID, config.SecretAccessKey, "")
 
-	uploadObjects := make([]s3manager.BatchUploadObject, config.BatchSyncSize)
+	uploadObjects := make([]s3manager.BatchUploadObject, len(events))
 
 	for i, event := range events {
 		file, err := os.Open(event.Path)
@@ -95,13 +95,14 @@ func uploadFiles(config *Configuration, events []watcher.Event) {
 	iter := &s3manager.UploadObjectsIterator{Objects: uploadObjects}
 
 	if err := uploader.UploadWithIterator(aws.BackgroundContext(), iter); err != nil {
-		log.Panicln("Failed batch upload of objects", err)
+		log.Println("Failed batch upload of objects", err)
 	}
 }
 
 func syncFile(config *Configuration, event watcher.Event) {
-	if event.Op == watcher.Rename || event.Op == watcher.Move || event.Op == watcher.Remove {
+	if event.Op == watcher.Remove { //event.Op == watcher.Rename || event.Op == watcher.Move ||
 		// we need some more fanciness reacting on moved and renamed files
+		eventPool.incomingEvent <- event
 	} else if event.Op == watcher.Create || event.Op == watcher.Write {
 		// TODO: an md5 check against current database
 		// if found, err := exists(event.Path); err == nil && found {

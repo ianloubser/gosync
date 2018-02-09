@@ -6,8 +6,10 @@
     "BucketEndpoint": "http://127.0.0.1",
     "ScanInterval": 1,
     "BatchSyncSize": 10,
-    "InitialSync": false,
+    "InitialSync": true,
+    "LogFile": "example.log",
     "Paths": [
-        "/Users/Ian/go/src/gosyncs3/test/data/*"
+        "/Users/Ian/go/src/gosyncs3/test/data/*",
+        "/Users/Ian/Desktop/*"
     ]
 }

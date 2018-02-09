@@ -17,6 +17,7 @@ type Configuration struct {
 	ScanInterval    int64
 	BatchSyncSize   int
 	InitialSync     bool
+	LogFile         string
 	Paths           []string
 }
 
