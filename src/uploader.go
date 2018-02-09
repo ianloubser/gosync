@@ -3,7 +3,6 @@ package main
 import (
 	"log"
 	"os"
-	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
@@ -13,15 +12,22 @@ import (
 	"github.com/radovskyb/watcher"
 )
 
-type SyncPool struct {
-	// store all the events queued for S3 sync to allow for buffering
-	incomingEvent  chan watcher.Event
-	queue          []watcher.Event
-	lastPoolUpdate time.Time
-	delay          *time.Timer
-	lastSync       time.Time
-	batchSize      int64
-	lastSize       int
+// describes what the sync task needs to do in batch
+type TaskOperation uint32
+
+const (
+	Create TaskOperation = iota
+	Delete
+)
+
+// this differs from the SyncPool
+type Sync struct {
+	queue []SyncTask
+}
+
+type SyncTask struct {
+	taskType   TaskOperation
+	eventBatch []watcher.Event
 }
 
 func removeFiles(config *Configuration, events []watcher.Event) {
@@ -101,7 +107,7 @@ func syncFile(config *Configuration, event watcher.Event) {
 		// if found, err := exists(event.Path); err == nil && found {
 		// fileHash, _ := getFileHash(event.Path)
 
-		syncPool.incomingEvent <- event
+		eventPool.incomingEvent <- event
 	}
 }
 
