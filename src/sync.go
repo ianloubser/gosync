@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"time"
 
+	"github.com/patrickmn/go-cache"
 	"github.com/radovskyb/watcher"
 )
 
@@ -19,6 +21,7 @@ type EventProcessPool struct {
 
 var eventPool EventProcessPool
 var sync Sync
+var fileCache cache.Cache
 
 func configureLogging(path string) (*os.File, error) {
 	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
@@ -57,9 +60,17 @@ func main() {
 	// configure logging and run script
 	config := readConfig("conf.json")
 
-	f, _ := configureLogging(config.LogFile)
-	defer f.Close()
-	log.SetOutput(f)
+	if config.LogFile != "" {
+		absolute, _ := filepath.Abs(config.LogFile)
+		exist, _ := exists(filepath.Dir(absolute))
+		if exist == true {
+			f, _ := configureLogging(config.LogFile)
+			defer f.Close()
+			log.SetOutput(f)
+		} else {
+			log.Println("Not logging to file, log directory specified doesn't exist.")
+		}
+	}
 
 	// make sure the ouput gets set first. So the log writes to a file.
 	log.Println()
@@ -68,11 +79,18 @@ func main() {
 	// initialize these entries so memory gets preserved
 	eventPool.incomingEvent = make(chan watcher.Event)
 
+	// init key-value cache
+	fileCache := cache.New(30*time.Minute, 90*time.Minute)
+
+	fileCache.Set("testkey", "empty", cache.DefaultExpiration)
+
 	// file event found listener
 	go func() {
 		for {
 			newEvent := <-eventPool.incomingEvent
 			eventPool.events = append(eventPool.events, newEvent)
+
+			log.Println(filepath.Dir(newEvent.Path))
 
 			// do this so we can reset the callback
 			if eventPool.delay != nil {

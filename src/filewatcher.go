@@ -6,6 +6,7 @@ import (
 	"log"
 	"math"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/radovskyb/watcher"
@@ -65,6 +66,20 @@ func exists(path string) (bool, error) {
 		return false, nil
 	}
 	return true, err
+}
+
+func getCanonicalFileKey(path string) (string, error) {
+
+	dirList := filepath.SplitList(path)
+
+	abs, _ = filepath.Abs(path)
+	newPath := filepath.FromSlash(abs)
+	if len(dirList) == 2 {
+		path := dirList[1]
+		newPath := filepath.FromSlash(abs)
+	}
+
+	return newPath, nil
 }
 
 func filewatcher(config *Configuration) {

@@ -30,6 +30,10 @@ type SyncTask struct {
 	eventBatch []watcher.Event
 }
 
+// func generateKeyFromPath(path string) string {
+// 	return fmt.Sprintf("%s/%s", filepath.ToSlash(volume), )
+// }
+
 func removeFiles(config *Configuration, events []watcher.Event) {
 	creds := credentials.NewStaticCredentials(config.AccessKeyID, config.SecretAccessKey, "")
 
@@ -71,6 +75,8 @@ func uploadFiles(config *Configuration, events []watcher.Event) {
 		if err != nil {
 			log.Printf("Could not load the file to upload, %s", event.Path)
 		} else {
+			// sanitize the path to a valid key descriptor
+			// keyStr := generateKeyFromPath(event.Path)
 			uploadObjects[i] = s3manager.BatchUploadObject{
 				Object: &s3manager.UploadInput{
 					Bucket:  aws.String(config.BucketName),
@@ -79,6 +85,7 @@ func uploadFiles(config *Configuration, events []watcher.Event) {
 					Tagging: aws.String("some md5 file hash"),
 				},
 			}
+			// defer file.Close()
 		}
 	}
 
@@ -106,7 +113,18 @@ func syncFile(config *Configuration, event watcher.Event) {
 	} else if event.Op == watcher.Create || event.Op == watcher.Write {
 		// TODO: an md5 check against current database
 		// if found, err := exists(event.Path); err == nil && found {
-		// fileHash, _ := getFileHash(event.Path)
+
+		// 	getCanonicalFileKey(event.Path)
+		// 	fileHash, _ := getFileHash(event.Path)
+		// 	// hash, found := fileCache.Get("dude")
+		// 	// if hash, found := fileCache.Get("dude"); found {
+		// 	// 	// fileHash
+		// 	// }
+		if _, found := fileCache.Get("foo"); found {
+			// foo := file.(string)
+			// ...
+		}
+		// }
 
 		eventPool.incomingEvent <- event
 	}
