@@ -30,10 +30,6 @@ type SyncTask struct {
 	eventBatch []watcher.Event
 }
 
-// func generateKeyFromPath(path string) string {
-// 	return fmt.Sprintf("%s/%s", filepath.ToSlash(volume), )
-// }
-
 func removeFiles(config *Configuration, events []watcher.Event) {
 	creds := credentials.NewStaticCredentials(config.AccessKeyID, config.SecretAccessKey, "")
 
@@ -106,6 +102,33 @@ func uploadFiles(config *Configuration, events []watcher.Event) {
 	}
 }
 
+func existsOnS3(config *Configuration, canonicalPath string, md5Hash string) (bool, error) {
+	creds := credentials.NewStaticCredentials(config.AccessKeyID, config.SecretAccessKey, "")
+	sess := session.New(&aws.Config{
+		Region:           aws.String(config.BucketRegion),
+		Endpoint:         aws.String(config.BucketEndpoint),
+		S3ForcePathStyle: aws.Bool(true),
+		Credentials:      creds,
+	})
+
+	fileInput := &s3.GetObjectTaggingInput{
+		Bucket: aws.String(config.BucketName),
+		Key:    aws.String(canonicalPath),
+	}
+
+	svc := s3.New(sess)
+
+	result, err := svc.GetObjectTagging(fileInput)
+	if err != nil {
+		log.Println("Some Issue here")
+	}
+
+	log.Printf("Checked on s3 for %s", canonicalPath)
+	log.Printf("Result: %s", result)
+
+	return false, nil
+}
+
 func syncFile(config *Configuration, event watcher.Event) {
 	if event.Op == watcher.Remove { //event.Op == watcher.Rename || event.Op == watcher.Move ||
 		// we need some more fanciness reacting on moved and renamed files
@@ -114,30 +137,30 @@ func syncFile(config *Configuration, event watcher.Event) {
 		// TODO: an md5 check against current database
 		// if found, err := exists(event.Path); err == nil && found {
 
-		// 	getCanonicalFileKey(event.Path)
-		// 	fileHash, _ := getFileHash(event.Path)
-		// 	// hash, found := fileCache.Get("dude")
-		// 	// if hash, found := fileCache.Get("dude"); found {
-		// 	// 	// fileHash
-		// 	// }
-		if _, found := fileCache.Get("foo"); found {
-			// foo := file.(string)
-			// ...
-		}
+		// canonicalPath, _ := getCanonicalFileKey(event.Path)
+		// fileHash, _ := getFileHash(event.Path)
+		// md5Hash := hex.EncodeToString(fileHash.MD5)
+
+		// exist, _ := existsOnS3(config, canonicalPath, md5Hash)
+		// if !exist {
+		// 	eventPool.incomingEvent <- event
+		// 	log.Printf("Could not find file on S3")
 		// }
 
+		// we store the md5 hash as the key in cache
+		// if _, found := fileCache.Get(md5Hash); found {
+		// 	// TODO: we need to do something if the file hash was found
+		// 	exist, _ := existsOnS3(config, canonicalPath, md5Hash)
+		// 	if !exist {
+		// 		eventPool.incomingEvent <- event
+		// 	}
+		// } else {
+		// 	exist, _ := existsOnS3(config, canonicalPath, md5Hash)
+		// 	if !exist {
+		// 		eventPool.incomingEvent <- event
+		// 	}
+		// 	fileCache.Set(md5Hash, canonicalPath, cache.DefaultExpiration)
 		eventPool.incomingEvent <- event
+		// }
 	}
 }
-
-// fileInput := &s3.GetObjectTaggingInput{
-// 	Bucket: aws.String(config.BucketName),
-// 	Key:    aws.String(event.Path),
-// }
-
-// svc := s3.New(sess)
-
-// result, err := svc.GetObjectTagging(input)
-// if err != nil {
-// 	log.Println("Some Issue here")
-// }

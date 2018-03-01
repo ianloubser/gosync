@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/hex"
 	"fmt"
 	"log"
 	"os"
@@ -82,7 +83,7 @@ func main() {
 	// init key-value cache
 	fileCache := cache.New(30*time.Minute, 90*time.Minute)
 
-	fileCache.Set("testkey", "empty", cache.DefaultExpiration)
+	fileCache.Set("init", true, cache.DefaultExpiration)
 
 	// file event found listener
 	go func() {
@@ -90,7 +91,23 @@ func main() {
 			newEvent := <-eventPool.incomingEvent
 			eventPool.events = append(eventPool.events, newEvent)
 
-			log.Println(filepath.Dir(newEvent.Path))
+			log.Println(newEvent)
+
+			log.Printf("Getting file md5 hash")
+			fileHash, _ := getMD5(newEvent.Path)
+			md5Hash := hex.EncodeToString(fileHash.MD5)
+			log.Printf("Got md5 hash: %s", md5Hash)
+
+			canonicalKey, _ := getCanonicalFileKey(newEvent.Path)
+			log.Printf("Got canonicalKey: %s", canonicalKey)
+			exist := false
+			// existsOnS3(&config, canonicalKey, md5Hash)
+
+			if exist {
+				log.Println("File exists with same MD5")
+			} else {
+				log.Println("File does not exist on S3")
+			}
 
 			// do this so we can reset the callback
 			if eventPool.delay != nil {

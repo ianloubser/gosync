@@ -4,9 +4,9 @@ import (
 	"crypto/md5"
 	"io"
 	"log"
-	"math"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/radovskyb/watcher"
@@ -22,37 +22,25 @@ type FileHash struct {
 }
 
 //Get takes a file and returns the FileHash struct
-func getFileHash(fileLocation string) (*FileHash, error) {
+func getMD5(filePath string) (*FileHash, error) {
 	var fileHash = FileHash{}
 
-	file, err := os.Open(fileLocation)
+	f, err := os.Open(filePath)
 	if err != nil {
-		return &fileHash, err
+		log.Fatal(err)
 	}
+	defer f.Close()
 
-	defer file.Close()
-
-	fileInfo, _ := file.Stat()
+	fileInfo, _ := f.Stat()
 	fileHash.Filename = fileInfo.Name()
 	fileHash.Size = fileInfo.Size()
 
-	hash := md5.New()
-
-	blocks := uint64(math.Ceil(float64(fileHash.Size) / float64(fileChunk)))
-
-	for i := uint64(0); i < blocks; i++ {
-		blocksize := int(math.Min(fileChunk, float64(fileHash.Size-int64(i*fileChunk))))
-		buf := make([]byte, blocksize)
-
-		file.Read(buf)
-		io.WriteString(hash, string(buf)) // append into the hash
+	h := md5.New()
+	if _, err := io.Copy(h, f); err != nil {
+		log.Fatal(err)
 	}
 
-	fileHash.MD5 = hash.Sum(nil)
-
-	// get hex md5 string
-	// hex.EncodeToString(fileHash.MD5)
-
+	fileHash.MD5 = h.Sum(nil)
 	return &fileHash, nil
 }
 
@@ -70,13 +58,13 @@ func exists(path string) (bool, error) {
 
 func getCanonicalFileKey(path string) (string, error) {
 
-	dirList := filepath.SplitList(path)
+	path, _ = filepath.Abs(path)
+	newPath := strings.Replace(path, "\\", "/", -1)
+	dirList := filepath.SplitList(newPath)
 
-	abs, _ = filepath.Abs(path)
-	newPath := filepath.FromSlash(abs)
 	if len(dirList) == 2 {
 		path := dirList[1]
-		newPath := filepath.FromSlash(abs)
+		return filepath.FromSlash(path), nil
 	}
 
 	return newPath, nil
@@ -137,8 +125,6 @@ func filewatcher(config *Configuration) {
 	if config.InitialSync {
 		log.Println("Performing initial sync step, this might take a while...")
 		for path, f := range w.WatchedFiles() {
-			// log.Println(path, f.Name())
-			// uploadFiles(config, path)
 			if !f.IsDir() {
 				eventPool.incomingEvent <- watcher.Event{watcher.Create, path, f}
 			}
