@@ -10,4 +10,12 @@ Configure a json file to list directories that should be monitored for any file 
 
 `gosync` prioritises low footprint above redundancy through eventual consistency, planning ono making this configurable in the future. It also keeps a local sqlite cache to allow it to pick up wherever it left off in the case of a crash or failure.
 
+The application is built with three main threads handling the process:
+
+1) Thread handling any filewatch events from new files created, files moved, deleted or updated.
+
+2) Thread doing validation on any new events found, like checks whether the file exists on s3 and does have the same MD5 hash.
+
+3) This thread receives any tasks that require communication with AWS s3, like delete or put object calls.
+
 Periodic status updates, reports and heartbeats can be sent by configuring the `webuiUrl` variable and providing the URL for each of the former events. It'll report this information via a POST request to the endpoints specified.

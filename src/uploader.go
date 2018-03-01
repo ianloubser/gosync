@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 
@@ -9,28 +10,9 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
-	"github.com/radovskyb/watcher"
 )
 
-// describes what the sync task needs to do in batch
-type TaskOperation uint32
-
-const (
-	Create TaskOperation = iota
-	Delete
-)
-
-// this differs from the SyncPool
-type Sync struct {
-	queue []SyncTask
-}
-
-type SyncTask struct {
-	taskType   TaskOperation
-	eventBatch []watcher.Event
-}
-
-func removeFiles(config *Configuration, events []watcher.Event) {
+func removeFiles(config *Configuration, events []FileSync) {
 	creds := credentials.NewStaticCredentials(config.AccessKeyID, config.SecretAccessKey, "")
 
 	removeObjects := make([]s3manager.BatchDeleteObject, len(events))
@@ -39,7 +21,7 @@ func removeFiles(config *Configuration, events []watcher.Event) {
 		removeObjects[i] = s3manager.BatchDeleteObject{
 			Object: &s3.DeleteObjectInput{
 				Bucket: aws.String(config.BucketName),
-				Key:    aws.String(event.Path),
+				Key:    aws.String(event.fileKey),
 			},
 		}
 	}
@@ -61,27 +43,27 @@ func removeFiles(config *Configuration, events []watcher.Event) {
 	}
 }
 
-func uploadFiles(config *Configuration, events []watcher.Event) {
+// The does the actual batch upload of the file
+func uploadFiles(config *Configuration, events []FileSync) {
 	creds := credentials.NewStaticCredentials(config.AccessKeyID, config.SecretAccessKey, "")
 
 	uploadObjects := make([]s3manager.BatchUploadObject, len(events))
 
 	for i, event := range events {
-		file, err := os.Open(event.Path)
+		file, err := os.Open(event.fileEvent.Path)
 		if err != nil {
-			log.Printf("Could not load the file to upload, %s", event.Path)
+			log.Printf("Could not load the file to upload, %s", event.fileEvent.Path)
 		} else {
 			// sanitize the path to a valid key descriptor
-			// keyStr := generateKeyFromPath(event.Path)
 			uploadObjects[i] = s3manager.BatchUploadObject{
 				Object: &s3manager.UploadInput{
 					Bucket:  aws.String(config.BucketName),
-					Key:     aws.String(event.Path),
+					Key:     aws.String(event.fileKey),
 					Body:    file,
-					Tagging: aws.String("some md5 file hash"),
+					Tagging: aws.String(event.fileMD5),
 				},
 			}
-			// defer file.Close()
+			defer file.Close()
 		}
 	}
 
@@ -98,69 +80,48 @@ func uploadFiles(config *Configuration, events []watcher.Event) {
 	iter := &s3manager.UploadObjectsIterator{Objects: uploadObjects}
 
 	if err := uploader.UploadWithIterator(aws.BackgroundContext(), iter); err != nil {
-		log.Println("Failed batch upload of objects", err)
+		if multierr, ok := err.(s3manager.MultiUploadFailure); ok {
+			// Process error and its associated uploadID
+			log.Println("Error:", multierr.Code(), multierr.Message(), multierr.UploadID())
+		} else {
+			// Process error generically
+			log.Println("Error:", err.Error())
+		}
 	}
 }
 
 func existsOnS3(config *Configuration, canonicalPath string, md5Hash string) (bool, error) {
 	creds := credentials.NewStaticCredentials(config.AccessKeyID, config.SecretAccessKey, "")
+
 	sess := session.New(&aws.Config{
-		Region:           aws.String(config.BucketRegion),
-		Endpoint:         aws.String(config.BucketEndpoint),
-		S3ForcePathStyle: aws.Bool(true),
-		Credentials:      creds,
+		Region:      aws.String(config.BucketRegion),
+		Endpoint:    aws.String(config.BucketEndpoint),
+		Credentials: creds,
 	})
 
-	fileInput := &s3.GetObjectTaggingInput{
+	fileInput := &s3.HeadObjectInput{
 		Bucket: aws.String(config.BucketName),
 		Key:    aws.String(canonicalPath),
 	}
 
 	svc := s3.New(sess)
 
-	result, err := svc.GetObjectTagging(fileInput)
+	log.Println("Make HEAD call")
+
+	// result, err := svc.HeadObject(fileInput)
+	req, resp := svc.HeadObjectRequest(fileInput)
+
+	err := req.Send()
+	if err == nil { // resp is now filled
+		fmt.Println(resp)
+	}
+
 	if err != nil {
 		log.Println("Some Issue here")
 	}
 
 	log.Printf("Checked on s3 for %s", canonicalPath)
-	log.Printf("Result: %s", result)
+	log.Printf("Result: %s", resp)
 
 	return false, nil
-}
-
-func syncFile(config *Configuration, event watcher.Event) {
-	if event.Op == watcher.Remove { //event.Op == watcher.Rename || event.Op == watcher.Move ||
-		// we need some more fanciness reacting on moved and renamed files
-		eventPool.incomingEvent <- event
-	} else if event.Op == watcher.Create || event.Op == watcher.Write {
-		// TODO: an md5 check against current database
-		// if found, err := exists(event.Path); err == nil && found {
-
-		// canonicalPath, _ := getCanonicalFileKey(event.Path)
-		// fileHash, _ := getFileHash(event.Path)
-		// md5Hash := hex.EncodeToString(fileHash.MD5)
-
-		// exist, _ := existsOnS3(config, canonicalPath, md5Hash)
-		// if !exist {
-		// 	eventPool.incomingEvent <- event
-		// 	log.Printf("Could not find file on S3")
-		// }
-
-		// we store the md5 hash as the key in cache
-		// if _, found := fileCache.Get(md5Hash); found {
-		// 	// TODO: we need to do something if the file hash was found
-		// 	exist, _ := existsOnS3(config, canonicalPath, md5Hash)
-		// 	if !exist {
-		// 		eventPool.incomingEvent <- event
-		// 	}
-		// } else {
-		// 	exist, _ := existsOnS3(config, canonicalPath, md5Hash)
-		// 	if !exist {
-		// 		eventPool.incomingEvent <- event
-		// 	}
-		// 	fileCache.Set(md5Hash, canonicalPath, cache.DefaultExpiration)
-		eventPool.incomingEvent <- event
-		// }
-	}
 }

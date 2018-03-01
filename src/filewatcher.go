@@ -84,11 +84,9 @@ func filewatcher(config *Configuration) {
 		for {
 			select {
 			case event := <-w.Event:
-				// log.Println(event)
 				if !event.FileInfo.IsDir() {
-					// log.Println("File:", event.Path)
-					// log.Println("Calling S3 sync on file", event.Op)
-					syncFile(config, event)
+					// This is not a directory, so send the file event to incoming event
+					eventPool.incomingEvent <- event
 				}
 			case err := <-w.Error:
 				log.Fatalln(err)

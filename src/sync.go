@@ -12,10 +12,35 @@ import (
 	"github.com/radovskyb/watcher"
 )
 
+// describes what the sync task needs to do in batch
+type TaskOperation uint32
+
+const (
+	Create TaskOperation = iota
+	Delete
+)
+
+// this differs from the SyncPool
+type Sync struct {
+	queue []SyncTask
+}
+
+type FileSync struct {
+	fileKey   string
+	fileMD5   string
+	fileSize  int64
+	fileEvent watcher.Event
+}
+
+type SyncTask struct {
+	taskType   TaskOperation
+	eventBatch []FileSync
+}
+
 type EventProcessPool struct {
 	// store all the events queued for S3 sync to allow for buffering
 	incomingEvent chan watcher.Event
-	events        []watcher.Event
+	files         []FileSync
 	delay         *time.Timer
 	batchSize     int64
 }
@@ -33,15 +58,15 @@ func configureLogging(path string) (*os.File, error) {
 }
 
 func examineEventPool() {
-	uploadEvents := []watcher.Event{}
-	removeEvents := []watcher.Event{}
+	uploadEvents := []FileSync{}
+	removeEvents := []FileSync{}
 
-	// categories the events into batches for upload and remove tasks
-	for _, event := range eventPool.events {
-		if event.Op == watcher.Remove {
+	// categorises the events into batches for upload and remove tasks
+	for _, event := range eventPool.files {
+		if event.fileEvent.Op == watcher.Remove {
 			// we need some more fanciness reacting on moved and renamed files
 			removeEvents = append(removeEvents, event)
-		} else if event.Op == watcher.Create || event.Op == watcher.Write {
+		} else if event.fileEvent.Op == watcher.Create || event.fileEvent.Op == watcher.Write {
 			uploadEvents = append(uploadEvents, event)
 		}
 	}
@@ -89,24 +114,23 @@ func main() {
 	go func() {
 		for {
 			newEvent := <-eventPool.incomingEvent
-			eventPool.events = append(eventPool.events, newEvent)
 
-			log.Println(newEvent)
-
-			log.Printf("Getting file md5 hash")
+			// Get file MD5 hash
 			fileHash, _ := getMD5(newEvent.Path)
 			md5Hash := hex.EncodeToString(fileHash.MD5)
-			log.Printf("Got md5 hash: %s", md5Hash)
 
+			// Get a canonical file path (necessary for Windows)
 			canonicalKey, _ := getCanonicalFileKey(newEvent.Path)
-			log.Printf("Got canonicalKey: %s", canonicalKey)
-			exist := false
-			// existsOnS3(&config, canonicalKey, md5Hash)
 
-			if exist {
-				log.Println("File exists with same MD5")
-			} else {
-				log.Println("File does not exist on S3")
+			// TODO: S3 head check should perhaps happen here
+
+			if _, found := fileCache.Get(md5Hash); found {
+				// Check in the cache for the file
+			}
+
+			// After event received, check if it is the type we support
+			if newEvent.Op == watcher.Create || newEvent.Op == watcher.Write || newEvent.Op == watcher.Remove {
+				eventPool.files = append(eventPool.files, FileSync{canonicalKey, md5Hash, fileHash.Size, newEvent})
 			}
 
 			// do this so we can reset the callback
@@ -117,21 +141,21 @@ func main() {
 			log.Println("Event received", newEvent)
 
 			// when a new fileEvent is found that should be synced, check pool size whether max is reached
-			if len(eventPool.events) == config.BatchSyncSize {
+			if len(eventPool.files) == config.BatchSyncSize {
 				examineEventPool()
 
 				log.Println("Sync pool filled!!", newEvent)
 				log.Println("Configured to batch sizes of", config.BatchSyncSize)
-				if len(eventPool.events) > 0 {
-					eventPool.events = eventPool.events[config.BatchSyncSize-1 : len(eventPool.events)-1]
+				if len(eventPool.files) > 0 {
+					eventPool.files = eventPool.files[config.BatchSyncSize-1 : len(eventPool.files)-1]
 				} else {
-					eventPool.events = eventPool.events[0:0]
+					eventPool.files = eventPool.files[0:0]
 				}
 			} else {
 				eventPool.delay = time.AfterFunc(time.Second*4, func() {
 					// TODO: make the delay configurable via the config file
 					examineEventPool()
-					eventPool.events = eventPool.events[0:0]
+					eventPool.files = eventPool.files[0:0]
 				})
 			}
 		}
