@@ -1,11 +1,11 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"os"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
@@ -55,12 +55,18 @@ func uploadFiles(config *Configuration, events []FileSync) {
 			log.Printf("Could not load the file to upload, %s", event.fileEvent.Path)
 		} else {
 			// sanitize the path to a valid key descriptor
+			var fileMd5 *string
+			fileMd5 = &event.fileMD5
+			metadata := map[string]*string{
+				"MD5": fileMd5,
+			}
+
 			uploadObjects[i] = s3manager.BatchUploadObject{
 				Object: &s3manager.UploadInput{
-					Bucket:  aws.String(config.BucketName),
-					Key:     aws.String(event.fileKey),
-					Body:    file,
-					Tagging: aws.String(event.fileMD5),
+					Bucket:   aws.String(config.BucketName),
+					Key:      aws.String(event.fileKey),
+					Body:     file,
+					Metadata: metadata,
 				},
 			}
 			defer file.Close()
@@ -94,9 +100,10 @@ func existsOnS3(config *Configuration, canonicalPath string, md5Hash string) (bo
 	creds := credentials.NewStaticCredentials(config.AccessKeyID, config.SecretAccessKey, "")
 
 	sess := session.New(&aws.Config{
-		Region:      aws.String(config.BucketRegion),
-		Endpoint:    aws.String(config.BucketEndpoint),
-		Credentials: creds,
+		Region:           aws.String(config.BucketRegion),
+		Endpoint:         aws.String(config.BucketEndpoint),
+		S3ForcePathStyle: aws.Bool(true),
+		Credentials:      creds,
 	})
 
 	fileInput := &s3.HeadObjectInput{
@@ -105,23 +112,29 @@ func existsOnS3(config *Configuration, canonicalPath string, md5Hash string) (bo
 	}
 
 	svc := s3.New(sess)
-
-	log.Println("Make HEAD call")
-
-	// result, err := svc.HeadObject(fileInput)
-	req, resp := svc.HeadObjectRequest(fileInput)
-
-	err := req.Send()
-	if err == nil { // resp is now filled
-		fmt.Println(resp)
-	}
+	result, err := svc.HeadObject(fileInput)
 
 	if err != nil {
-		log.Println("Some Issue here")
+		if aerr, ok := err.(awserr.Error); ok {
+			switch aerr.Code() {
+			case "NotFound":
+				log.Printf("404 received")
+			default:
+				log.Printf("Error Code: %s, Message: %s", aerr.Code(), aerr.Error())
+			}
+		} else {
+			// Print the error, cast err to awserr.Error to get the Code and
+			// Message from an error.
+			log.Printf("Awe: %s", err.Error())
+		}
+		return false, nil
 	}
 
-	log.Printf("Checked on s3 for %s", canonicalPath)
-	log.Printf("Result: %s", resp)
+	if md5Hash == *result.Metadata["Md5"] {
+		return true, nil
+	} else {
+		log.Printf("Found file but md5 mismatch: %s != %s", md5Hash, *result.Metadata["Md5"])
+	}
 
 	return false, nil
 }

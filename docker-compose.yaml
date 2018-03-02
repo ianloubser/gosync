@@ -3,7 +3,7 @@
 version: '3'
 
 services:
-  minio:
+  mocks3:
     image: minio/minio
     hostname: mocks3
     container_name: mocks3

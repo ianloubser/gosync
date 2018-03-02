@@ -122,15 +122,17 @@ func main() {
 			// Get a canonical file path (necessary for Windows)
 			canonicalKey, _ := getCanonicalFileKey(newEvent.Path)
 
-			// TODO: S3 head check should perhaps happen here
+			log.Printf("Checking for %s existence on S3", canonicalKey)
+			exists, _ := existsOnS3(&config, canonicalKey, md5Hash)
 
-			if _, found := fileCache.Get(md5Hash); found {
-				// Check in the cache for the file
-			}
-
-			// After event received, check if it is the type we support
-			if newEvent.Op == watcher.Create || newEvent.Op == watcher.Write || newEvent.Op == watcher.Remove {
-				eventPool.files = append(eventPool.files, FileSync{canonicalKey, md5Hash, fileHash.Size, newEvent})
+			if exists {
+				log.Printf("Found item on S3")
+			} else {
+				log.Printf("Could not find item on S3")
+				// After event received, check if it is the type we support
+				if newEvent.Op == watcher.Create || newEvent.Op == watcher.Write || newEvent.Op == watcher.Remove {
+					eventPool.files = append(eventPool.files, FileSync{canonicalKey, md5Hash, fileHash.Size, newEvent})
+				}
 			}
 
 			// do this so we can reset the callback
@@ -180,6 +182,7 @@ func main() {
 					}
 				}
 			}
+			// time.Sleep(time.Second * 1)
 		}
 	}()
 
