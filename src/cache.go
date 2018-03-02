@@ -13,6 +13,14 @@ type FileCache struct {
 	db sqlite3.SQLiteDriver
 }
 
+func (fc *FileCache) add(canonicalKey string) {
+
+}
+
+func NewCache(cachePath string) {
+
+}
+
 // This is all just taken from the sqlite3 example page on github
 // modularize this code
 // split cache file check into function

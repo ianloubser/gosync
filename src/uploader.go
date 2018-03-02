@@ -85,6 +85,7 @@ func uploadFiles(config *Configuration, events []FileSync) {
 	uploader := s3manager.NewUploader(sess)
 	iter := &s3manager.UploadObjectsIterator{Objects: uploadObjects}
 
+	log.Println("Loaded files into memory, starting upload")
 	if err := uploader.UploadWithIterator(aws.BackgroundContext(), iter); err != nil {
 		if multierr, ok := err.(s3manager.MultiUploadFailure); ok {
 			// Process error and its associated uploadID
@@ -118,22 +119,20 @@ func existsOnS3(config *Configuration, canonicalPath string, md5Hash string) (bo
 		if aerr, ok := err.(awserr.Error); ok {
 			switch aerr.Code() {
 			case "NotFound":
-				log.Printf("404 received")
+				return false, nil
 			default:
 				log.Printf("Error Code: %s, Message: %s", aerr.Code(), aerr.Error())
 			}
 		} else {
 			// Print the error, cast err to awserr.Error to get the Code and
 			// Message from an error.
-			log.Printf("Awe: %s", err.Error())
+			log.Printf("Unknown AWS SDK error: %s", err.Error())
 		}
 		return false, nil
 	}
 
 	if md5Hash == *result.Metadata["Md5"] {
 		return true, nil
-	} else {
-		log.Printf("Found file but md5 mismatch: %s != %s", md5Hash, *result.Metadata["Md5"])
 	}
 
 	return false, nil

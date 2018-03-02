@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/patrickmn/go-cache"
@@ -58,6 +59,7 @@ func configureLogging(path string) (*os.File, error) {
 }
 
 func examineEventPool() {
+	log.Printf("Examining sync pool of %d items", len(eventPool.files))
 	uploadEvents := []FileSync{}
 	removeEvents := []FileSync{}
 
@@ -66,7 +68,7 @@ func examineEventPool() {
 		if event.fileEvent.Op == watcher.Remove {
 			// we need some more fanciness reacting on moved and renamed files
 			removeEvents = append(removeEvents, event)
-		} else if event.fileEvent.Op == watcher.Create || event.fileEvent.Op == watcher.Write {
+		} else if event.fileEvent.Op == watcher.Create || event.fileEvent.Op == watcher.Write || event.fileEvent.Op == watcher.Rename || event.fileEvent.Op == watcher.Move {
 			uploadEvents = append(uploadEvents, event)
 		}
 	}
@@ -115,6 +117,10 @@ func main() {
 		for {
 			newEvent := <-eventPool.incomingEvent
 
+			if newEvent.Op == watcher.Rename || newEvent.Op == watcher.Move {
+				newEvent.Path = strings.Split(newEvent.Path, " -> ")[1]
+			}
+
 			// Get file MD5 hash
 			fileHash, _ := getMD5(newEvent.Path)
 			md5Hash := hex.EncodeToString(fileHash.MD5)
@@ -122,15 +128,14 @@ func main() {
 			// Get a canonical file path (necessary for Windows)
 			canonicalKey, _ := getCanonicalFileKey(newEvent.Path)
 
-			log.Printf("Checking for %s existence on S3", canonicalKey)
+			log.Printf("Received event checking s3: %s", newEvent)
 			exists, _ := existsOnS3(&config, canonicalKey, md5Hash)
 
-			if exists {
-				log.Printf("Found item on S3")
-			} else {
-				log.Printf("Could not find item on S3")
+			if !exists {
+				log.Printf("Added %s to queue %s", canonicalKey, md5Hash)
 				// After event received, check if it is the type we support
-				if newEvent.Op == watcher.Create || newEvent.Op == watcher.Write || newEvent.Op == watcher.Remove {
+				if newEvent.Op == watcher.Create || newEvent.Op == watcher.Write || newEvent.Op == watcher.Remove ||
+					newEvent.Op == watcher.Rename || newEvent.Op == watcher.Move {
 					eventPool.files = append(eventPool.files, FileSync{canonicalKey, md5Hash, fileHash.Size, newEvent})
 				}
 			}
@@ -138,16 +143,13 @@ func main() {
 			// do this so we can reset the callback
 			if eventPool.delay != nil {
 				eventPool.delay.Stop()
-				log.Println("Killed the previous sync delayed callback")
 			}
-			log.Println("Event received", newEvent)
 
 			// when a new fileEvent is found that should be synced, check pool size whether max is reached
 			if len(eventPool.files) == config.BatchSyncSize {
 				examineEventPool()
 
-				log.Println("Sync pool filled!!", newEvent)
-				log.Println("Configured to batch sizes of", config.BatchSyncSize)
+				log.Println("Sync pool full, configured to batch sizes of", config.BatchSyncSize)
 				if len(eventPool.files) > 0 {
 					eventPool.files = eventPool.files[config.BatchSyncSize-1 : len(eventPool.files)-1]
 				} else {
@@ -172,7 +174,7 @@ func main() {
 					sync.queue = sync.queue[1:]
 
 					if task.taskType == Create {
-						log.Printf("Do a batch create for %d items", len(task.eventBatch))
+						log.Printf("Do a batch create for %d items out of %d queued", len(task.eventBatch), len(sync.queue))
 						uploadFiles(&config, task.eventBatch)
 					}
 
@@ -182,7 +184,7 @@ func main() {
 					}
 				}
 			}
-			// time.Sleep(time.Second * 1)
+			time.Sleep(time.Second * 1)
 		}
 	}()
 

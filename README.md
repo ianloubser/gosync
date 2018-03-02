@@ -19,3 +19,7 @@ The application is built with three main threads handling the process:
 3) This thread receives any tasks that require communication with AWS s3, like delete or put object calls.
 
 Periodic status updates, reports and heartbeats can be sent by configuring the `webuiUrl` variable and providing the URL for each of the former events. It'll report this information via a POST request to the endpoints specified.
+
+### Local File Cache
+
+To make sure unneccesary uploads and move requests etc don't get sent to S3, a local cache is managed to store what the latest state of a certain file with a `canonicalKey` is, what/when it's last operation was and what the last known file MD5 hash that was synced.

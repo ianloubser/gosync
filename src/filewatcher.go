@@ -27,7 +27,7 @@ func getMD5(filePath string) (*FileHash, error) {
 
 	f, err := os.Open(filePath)
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
 	}
 	defer f.Close()
 
@@ -37,7 +37,7 @@ func getMD5(filePath string) (*FileHash, error) {
 
 	h := md5.New()
 	if _, err := io.Copy(h, f); err != nil {
-		log.Fatal(err)
+		log.Println(err)
 	}
 
 	fileHash.MD5 = h.Sum(nil)
